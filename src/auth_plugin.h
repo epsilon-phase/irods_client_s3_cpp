@@ -1,5 +1,5 @@
-#ifndef AUTH_PLUGIN_H
-#define AUTH_PLUGIN_H
+#ifndef IRODS_S3_API_AUTH_PLUGIN_H
+#define IRODS_S3_API_AUTH_PLUGIN_H
 #include <stddef.h>
 #include <irods/rcConnect.h>
 
@@ -12,7 +12,7 @@ extern "C" {
 /// @param connection The irods server connection
 /// @param username The username to get the secret key of.
 /// @param access_key The output buffer for the secret key.
-/// @returns true on being able to retrieve the password, false otherwise
+/// @returns true on being able to retrieve the secret key, false otherwise
 typedef bool (*secret_key_fn)(rcComm_t* connection, const char* username, char* access_key);
 
 /// A function type for mapping s3 users to iRODS users.
@@ -56,22 +56,27 @@ typedef bool (
 /// @returns true when the user exists.
 typedef bool (*user_exists_fn)(rcComm_t* connection, const char* username);
 
-/// Add an authentication plugin to the back of the authentication plugin list.
-/// @param secret_key_function A function to resolve the secret key. Required to not be nullptr
-/// @param username_resolver A function to resolve the irods username from an s3 username. Required to not be a nullptr
-/// @param reset_user_function A function to reset a user's secret key, optional
-/// @param create_user_function A function to create a user, optional.
-/// @param delete_user_function A function to delete a user, optional
-/// @param user_exists_fn a function to check if a user exists, optional
-void add_authentication_plugin(
-    secret_key_fn secret_key_function,
-    get_iRODS_user_fn username_resolver,
-    reset_user_fn reset_user_function,
-    create_user_fn create_user_function,
-    delete_user_fn delete_user_function,
-    user_exists_fn user_exists_fn);
+#ifdef BRIDGE_PLUGIN
+extern
+#endif // BRIDGE_PLUGIN
+    /// Add an authentication plugin to the back of the authentication plugin list.
+    /// @param secret_key_function A function to resolve the secret key. Required to not be nullptr
+    /// @param username_resolver A function to resolve the irods username from an s3 username. Required to not be a
+    /// nullptr
+    /// @param reset_user_function A function to reset a user's secret key, optional
+    /// @param create_user_function A function to create a user, optional.
+    /// @param delete_user_function A function to delete a user, optional
+    /// @param user_exists_fn a function to check if a user exists, optional
+    void
+    add_authentication_plugin(
+        secret_key_fn secret_key_function,
+        get_iRODS_user_fn username_resolver,
+        reset_user_fn reset_user_function,
+        create_user_fn create_user_function,
+        delete_user_fn delete_user_function,
+        user_exists_fn user_exists_fn);
 
 #ifdef __cplusplus
 }
-#endif
-#endif
+#endif // __cplusplus
+#endif // IRODS_S3_API_AUTH_PLUGIN_H

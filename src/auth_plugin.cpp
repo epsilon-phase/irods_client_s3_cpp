@@ -1,4 +1,8 @@
 #include "./auth_plugin.h"
+#include "authentication.hpp"
+#include "./plugin.hpp"
+
+#include <optional>
 #include <vector>
 #include <string>
 
@@ -13,10 +17,10 @@ namespace
         delete_user_fn delete_user;
         user_exists_fn user_exists;
     };
-    std::vector<authentication_plugin> authentication_plugins;
+    authentication_plugin active_authentication_plugin;
 } //namespace
 
-extern void add_authentication_plugin(
+void add_authentication_plugin(
     secret_key_fn secret_key_function,
     get_iRODS_user_fn username_resolver,
     reset_user_fn reset_user_function,
@@ -24,40 +28,72 @@ extern void add_authentication_plugin(
     delete_user_fn delete_user_function,
     user_exists_fn user_exists)
 {
-    authentication_plugins.emplace_back(authentication_plugin{
+    active_authentication_plugin = authentication_plugin{
         secret_key_function,
         username_resolver,
         reset_user_function,
         create_user_function,
         delete_user_function,
-        user_exists});
+        user_exists};
 }
 
-bool user_exists(rcComm_t& connection, const std::string_view& username)
+bool irods::s3::plugins::authentication_plugin_loaded()
 {
-    for (const auto& plugin : authentication_plugins) {
-        if (plugin.user_exists) {
-            if (plugin.user_exists(&connection, username.data()))
-                return true;
-        }
-        else {
-            char irods_name[50];
-            if (plugin.get_iRODS_user(&connection, username.data(), irods_name)) {
-                return true;
-            }
+    return active_authentication_plugin.get_iRODS_user != nullptr;
+}
+
+bool irods::s3::authentication::delete_user(rcComm_t& connection, const std::string_view username)
+{
+    return active_authentication_plugin.delete_user(&connection, username.data());
+}
+
+bool irods::s3::authentication::user_exists(rcComm_t& connection, const std::string_view username)
+{
+    if (active_authentication_plugin.user_exists) {
+        active_authentication_plugin.user_exists(&connection, username.data());
+    }
+    else {
+        // Arbitrary length, can be adjusted without issue. May be necessary to expand the size
+        // should someone with a maximally multilingual plane username with more than 30 graphemes use it.
+        char irods_name[50];
+        if (active_authentication_plugin.get_iRODS_user(&connection, username.data(), irods_name)) {
+            return true;
         }
     }
     return false;
 }
-bool create_user(rcComm_t& connection, const std::string_view& username, const std::string_view& secret_key)
+
+bool irods::s3::authentication::create_user(
+    rcComm_t& connection,
+    const std::string_view username,
+    const std::string_view secret_key)
 {
-    // Check *every* authentication system for a matching user.
-    if (user_exists(connection, username))
+    if (user_exists(connection, username)) {
         return false;
-    for (const auto& plugin : authentication_plugins) {
-        if (plugin.create_user) {
-            return plugin.create_user(&connection, username.data(), secret_key.data(), secret_key.length());
-        }
+    }
+    if (active_authentication_plugin.create_user) {
+        return active_authentication_plugin.create_user(
+            &connection, username.data(), secret_key.data(), secret_key.length());
     }
     return false;
+}
+std::optional<std::string> irods::s3::authentication::get_iRODS_user(rcComm_t* conn, const std::string_view user)
+{
+    // Arbitrary length, can be adjusted without issue. May be necessary to expand the size
+    // should someone with a maximally multilingual plane username with more than 30 graphemes use it.
+    char username[120];
+    if (!active_authentication_plugin.get_iRODS_user(conn, user.data(), username)) {
+        return std::nullopt;
+    }
+    return std::string(username);
+}
+
+std::optional<std::string> irods::s3::authentication::get_user_secret_key(rcComm_t* conn, const std::string_view user)
+{
+    // Arbitrary length that should fit in the stack in most cases.
+    char secret_key[512];
+    if (!active_authentication_plugin.secret_key(conn, user.data(), secret_key)) {
+        return std::nullopt;
+    }
+    return std::string(secret_key);
 }
